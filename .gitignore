@@ -50,6 +50,10 @@ env/
 # Kaggle credentials (should be in ~/.kaggle/)
 kaggle.json
 
+# React frontend
+frontend/node_modules/
+frontend/dist/
+
 # OS files
 .DS_Store
 Thumbs.db

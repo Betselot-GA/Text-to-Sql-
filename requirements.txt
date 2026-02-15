@@ -11,6 +11,16 @@ kagglehub==0.3.4
 # Ollama (required - for LLM access)
 ollama==0.4.7
 
+# Optional: Microsoft SQL Server (for schema + execution when SQL_SERVER_CONNECTION_STRING is set)
+pyodbc==5.2.0
+
+# React frontend API (uvicorn backend.server:app)
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+
+# Optional: Streamlit frontend (streamlit run app.py)
+streamlit==1.40.0
+
 # Add your agent dependencies below (examples commented out)
 # langchain==0.3.7
 # langchain-ollama==0.2.3

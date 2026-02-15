@@ -161,10 +161,11 @@ Before starting, ensure you have:
 
 2. **Create a virtual environment** (see [Understanding Python Environments](#understanding-python-environments) below)
 
-3. **Install dependencies**:
+3. **Install dependencies** (inside your venv so all packages stay in the venv):
    ```bash
    pip install -r requirements.txt
    ```
+   On Windows, if the venv is not activated, use: `.\venv\Scripts\pip.exe install -r requirements.txt`
 
 4. **Set up Kaggle credentials** (required for downloading the dataset):
    - Go to [Kaggle](https://www.kaggle.com/) and sign in
@@ -334,6 +335,22 @@ your_submission/
 |------|-------------|
 | `main.py` | Interactive interface for testing your agent |
 | `db/bike_store.py` | Downloads and loads the bike store dataset into DuckDB |
+
+### React frontend (optional)
+
+A React (Vite) web UI is in the `frontend/` folder. To run it:
+
+1. **Start the API** (from project root, with venv activated):
+   ```bash
+   uvicorn backend.server:app --reload --port 8000
+   ```
+2. **Start the React app** (in another terminal):
+   ```bash
+   cd frontend && npm install && npm run dev
+   ```
+3. Open **http://localhost:5173** in your browser.
+
+See `frontend/README.md` for more details.
 
 ---
 

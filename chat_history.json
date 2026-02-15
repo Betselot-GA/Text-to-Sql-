@@ -1,0 +1,677 @@
+{
+  "chats": [
+    {
+      "id": "7ba88301",
+      "title": "which product is the most expensive?",
+      "created": "2026-02-15T09:55:23Z",
+      "updated": "2026-02-15T10:45:53Z",
+      "turns": [
+        {
+          "prompt": "which product is the most expensive?",
+          "sql": "SELECT NULL WHERE FALSE",
+          "results_count": 0,
+          "results_preview": [],
+          "results_columns": [
+            "NULL"
+          ]
+        },
+        {
+          "prompt": "which product is the most expensive?",
+          "sql": "SELECT product_name FROM products ORDER BY list_price DESC LIMIT 1",
+          "results_count": 1,
+          "results_preview": [
+            [
+              "Trek Domane SLR 9 Disc - 2018"
+            ]
+          ],
+          "results_columns": [
+            "product_name"
+          ],
+          "steps": [
+            {
+              "step": "selector",
+              "tables": [
+                "products"
+              ]
+            },
+            {
+              "step": "decomposer",
+              "sql": "SELECT product_name FROM products ORDER BY list_price DESC LIMIT 1"
+            },
+            {
+              "step": "refiner",
+              "attempts": [
+                {
+                  "attempt": 1,
+                  "sql": "SELECT product_name FROM products ORDER BY list_price DESC LIMIT 1",
+                  "success": true,
+                  "error": null
+                }
+              ],
+              "success": true
+            }
+          ]
+        },
+        {
+          "prompt": "which product is the most affordable?",
+          "sql": "SELECT MIN(list_price) FROM products",
+          "results_count": 1,
+          "results_preview": [
+            [
+              89.99
+            ]
+          ],
+          "results_columns": [
+            "min(list_price)"
+          ],
+          "steps": [
+            {
+              "step": "selector",
+              "tables": [
+                "products"
+              ]
+            },
+            {
+              "step": "decomposer",
+              "sql": "SELECT MIN(list_price) FROM products"
+            },
+            {
+              "step": "refiner",
+              "attempts": [
+                {
+                  "attempt": 1,
+                  "sql": "SELECT MIN(list_price) FROM products",
+                  "success": true,
+                  "error": null
+                }
+              ],
+              "success": true
+            }
+          ]
+        },
+        {
+          "prompt": "which product are affordable?",
+          "sql": "SELECT product_name FROM products WHERE list_price < ( SELECT AVG(list_price) FROM products ) LIMIT 10",
+          "results_count": 10,
+          "results_preview": [
+            [
+              "Trek 820 - 2016"
+            ],
+            [
+              "Ritchey Timberwolf Frameset - 2016"
+            ],
+            [
+              "Surly Wednesday Frameset - 2016"
+            ],
+            [
+              "Heller Shagamaw Frame - 2016"
+            ],
+            [
+              "Surly Ice Cream Truck Frameset - 2016"
+            ],
+            [
+              "Electra Townie Original 21D - 2016"
+            ],
+            [
+              "Electra Cruiser 1 (24-Inch) - 2016"
+            ],
+            [
+              "Electra Girl's Hawaii 1 (16-inch) - 2015/2016"
+            ],
+            [
+              "Electra Moto 1 - 2016"
+            ],
+            [
+              "Electra Townie Original 7D EQ - 2016"
+            ]
+          ],
+          "results_columns": [
+            "product_name"
+          ],
+          "steps": [
+            {
+              "step": "selector",
+              "tables": [
+                "products"
+              ]
+            },
+            {
+              "step": "decomposer",
+              "sql": "SELECT product_name FROM products WHERE list_price < ( SELECT AVG(list_price) FROM products ) LIMIT 10"
+            },
+            {
+              "step": "refiner",
+              "attempts": [
+                {
+                  "attempt": 1,
+                  "sql": "SELECT product_name FROM products WHERE list_price < ( SELECT AVG(list_price) FROM products ) LIMIT 10",
+                  "success": true,
+                  "error": null
+                }
+              ],
+              "success": true
+            }
+          ]
+        },
+        {
+          "prompt": "which product should I buy?",
+          "sql": "SELECT NULL WHERE FALSE",
+          "results_count": 0,
+          "results_preview": [],
+          "results_columns": [
+            "NULL"
+          ],
+          "steps": [
+            {
+              "step": "selector",
+              "tables": [
+                "products",
+                "order_items",
+                "categories"
+              ]
+            },
+            {
+              "step": "decomposer",
+              "sql": "SELECT product_name FROM products WHERE list_price = (SELECT AVG(list_price) FROM order_items JOIN products ON order_items.product_id = products.product_id)"
+            },
+            {
+              "step": "refiner",
+              "attempts": [
+                {
+                  "attempt": 1,
+                  "sql": "SELECT product_name FROM products WHERE list_price = (SELECT AVG(list_price) FROM order_items JOIN products ON order_items.product_id = products.product_id)",
+                  "success": false,
+                  "error": "BinderException: Binder Error: Ambiguous reference to column name \"list_price\" (use: \"order_items.list_price\" or \"products.list_price\")"
+                },
+                {
+                  "attempt": 2,
+                  "sql": "SELECT product_name FROM products WHERE list_price = (SELECT AVG(CAST(list_price AS DOUBLE)) FROM order_items JOIN products ON order_items.product_id = products.product_id)",
+                  "success": false,
+                  "error": "BinderException: Binder Error: Ambiguous reference to column name \"list_price\" (use: \"order_items.list_price\" or \"products.list_price\")"
+                },
+                {
+                  "attempt": 3,
+                  "sql": "SELECT product_name FROM products WHERE list_price = (SELECT AVG(CAST(list_price AS DOUBLE)) FROM order_items join products ON order_items.product_id = products.product_id)",
+                  "success": false,
+                  "error": "BinderException: Binder Error: Ambiguous reference to column name \"list_price\" (use: \"order_items.list_price\" or \"products.list_price\")"
+                }
+              ],
+              "success": false
+            }
+          ]
+        },
+        {
+          "prompt": "which product should I buy",
+          "sql": "SELECT p.product_name FROM products p JOIN brands b ON p.brand_id = b.brand_id JOIN categories c ON p.category_id = c.category_id ORDER BY list_price DESC LIMIT 1",
+          "results_count": 1,
+          "results_preview": [
+            [
+              "Trek Domane SLR 9 Disc - 2018"
+            ]
+          ],
+          "results_columns": [
+            "product_name"
+          ],
+          "steps": [
+            {
+              "step": "selector",
+              "tables": [
+                "products",
+                "categories",
+                "brands"
+              ]
+            },
+            {
+              "step": "decomposer",
+              "sql": "SELECT p.product_name FROM products p JOIN brands b ON p.brand_id = b.brand_id JOIN categories c ON p.category_id = c.category_id ORDER BY list_price DESC LIMIT 1"
+            },
+            {
+              "step": "refiner",
+              "attempts": [
+                {
+                  "attempt": 1,
+                  "sql": "SELECT p.product_name FROM products p JOIN brands b ON p.brand_id = b.brand_id JOIN categories c ON p.category_id = c.category_id ORDER BY list_price DESC LIMIT 1",
+                  "success": true,
+                  "error": null
+                }
+              ],
+              "success": true
+            }
+          ]
+        },
+        {
+          "prompt": "which product should I buy?",
+          "sql": "SELECT product_name FROM products WHERE list_price > ( SELECT AVG(list_price) FROM products ) LIMIT 1",
+          "results_count": 1,
+          "results_preview": [
+            [
+              "Trek Fuel EX 8 29 - 2016"
+            ]
+          ],
+          "results_columns": [
+            "product_name"
+          ],
+          "steps": [
+            {
+              "step": "selector",
+              "tables": [
+                "products"
+              ]
+            },
+            {
+              "step": "decomposer",
+              "sql": "SELECT product_name FROM products WHERE list_price > ( SELECT AVG(list_price) FROM products ) LIMIT 1"
+            },
+            {
+              "step": "refiner",
+              "attempts": [
+                {
+                  "attempt": 1,
+                  "sql": "SELECT product_name FROM products WHERE list_price > ( SELECT AVG(list_price) FROM products ) LIMIT 1",
+                  "success": true,
+                  "error": null
+                }
+              ],
+              "success": true
+            }
+          ]
+        },
+        {
+          "prompt": "what are the top 5 most expensive products?",
+          "sql": "SELECT T2.product_name FROM order_items AS T1 INNER JOIN products AS T2 ON T1.product_id = T2.product_id ORDER BY T1.list_price DESC LIMIT 5",
+          "results_count": 5,
+          "results_preview": [
+            [
+              "Trek Domane SLR 9 Disc - 2018"
+            ],
+            [
+              "Trek Domane SLR 9 Disc - 2018"
+            ],
+            [
+              "Trek Domane SLR 9 Disc - 2018"
+            ],
+            [
+              "Trek Domane SLR 8 Disc - 2018"
+            ],
+            [
+              "Trek Domane SLR 8 Disc - 2018"
+            ]
+          ],
+          "results_columns": [
+            "product_name"
+          ],
+          "steps": [
+            {
+              "step": "selector",
+              "tables": [
+                "products",
+                "order_items"
+              ]
+            },
+            {
+              "step": "decomposer",
+              "sql": "SELECT T2.product_name FROM order_items AS T1 INNER JOIN products AS T2 ON T1.product_id = T2.product_id ORDER BY T1.list_price DESC LIMIT 5"
+            },
+            {
+              "step": "refiner",
+              "attempts": [
+                {
+                  "attempt": 1,
+                  "sql": "SELECT T2.product_name FROM order_items AS T1 INNER JOIN products AS T2 ON T1.product_id = T2.product_id ORDER BY T1.list_price DESC LIMIT 5",
+                  "success": true,
+                  "error": null
+                }
+              ],
+              "success": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "1b393891",
+      "title": "which product I should not buy?",
+      "created": "2026-02-15T10:48:09Z",
+      "updated": "2026-02-15T10:48:44Z",
+      "turns": [
+        {
+          "prompt": "which product I should not buy?",
+          "sql": "SELECT t1.product_name FROM products AS t1 JOIN order_items AS t2 ON t1.product_id = t2.product_id WHERE t2.quantity < 10 AND t2.list_price * (100 - discount) > t1.list_price",
+          "results_count": 4722,
+          "results_preview": [
+            [
+              "Electra Townie Original 7D EQ - Women's - 2016"
+            ],
+            [
+              "Trek Remedy 29 Carbon Frameset - 2016"
+            ],
+            [
+              "Surly Straggler - 2016"
+            ],
+            [
+              "Electra Townie Original 7D EQ - 2016"
+            ],
+            [
+              "Trek Fuel EX 8 29 - 2016"
+            ],
+            [
+              "Electra Townie Original 7D EQ - Women's - 2016"
+            ],
+            [
+              "Electra Townie Original 7D EQ - 2016"
+            ],
+            [
+              "Surly Wednesday Frameset - 2016"
+            ],
+            [
+              "Electra Townie Original 7D EQ - Women's - 2016"
+            ],
+            [
+              "Ritchey Timberwolf Frameset - 2016"
+            ],
+            [
+              "Surly Straggler - 2016"
+            ],
+            [
+              "Pure Cycles Vine 8-Speed - 2016"
+            ],
+            [
+              "Electra Townie Original 7D EQ - 2016"
+            ],
+            [
+              "Pure Cycles Western 3-Speed - Women's - 2015/2016"
+            ],
+            [
+              "Electra Townie Original 21D - 2016"
+            ],
+            [
+              "Electra Townie Original 7D EQ - Women's - 2016"
+            ],
+            [
+              "Surly Wednesday Frameset - 2016"
+            ],
+            [
+              "Trek Conduit+ - 2016"
+            ],
+            [
+              "Electra Moto 1 - 2016"
+            ],
+            [
+              "Surly Wednesday Frameset - 2016"
+            ],
+            [
+              "Pure Cycles Vine 8-Speed - 2016"
+            ],
+            [
+              "Electra Girl's Hawaii 1 (16-inch) - 2015/2016"
+            ],
+            [
+              "Electra Townie Original 7D EQ - Women's - 2016"
+            ],
+            [
+              "Trek Slash 8 27.5 - 2016"
+            ],
+            [
+              "Electra Girl's Hawaii 1 (16-inch) - 2015/2016"
+            ],
+            [
+              "Trek Remedy 29 Carbon Frameset - 2016"
+            ],
+            [
+              "Electra Girl's Hawaii 1 (16-inch) - 2015/2016"
+            ],
+            [
+              "Electra Townie Original 7D EQ - 2016"
+            ],
+            [
+              "Trek Fuel EX 8 29 - 2016"
+            ],
+            [
+              "Surly Straggler 650b - 2016"
+            ],
+            [
+              "Electra Cruiser 1 (24-Inch) - 2016"
+            ],
+            [
+              "Pure Cycles Vine 8-Speed - 2016"
+            ],
+            [
+              "Electra Townie Original 7D EQ - Women's - 2016"
+            ],
+            [
+              "Electra Townie Original 7D EQ - 2016"
+            ],
+            [
+              "Surly Ice Cream Truck Frameset - 2016"
+            ],
+            [
+              "Electra Townie Original 21D - 2016"
+            ],
+            [
+              "Trek Remedy 29 Carbon Frameset - 2016"
+            ],
+            [
+              "Pure Cycles Western 3-Speed - Women's - 2015/2016"
+            ],
+            [
+              "Electra Girl's Hawaii 1 (20-inch) - 2015/2016"
+            ],
+            [
+              "Trek Remedy 29 Carbon Frameset - 2016"
+            ],
+            [
+              "Electra Cruiser 1 (24-Inch) - 2016"
+            ],
+            [
+              "Electra Cruiser 1 (24-Inch) - 2016"
+            ],
+            [
+              "Electra Girl's Hawaii 1 (16-inch) - 2015/2016"
+            ],
+            [
+              "Trek Remedy 29 Carbon Frameset - 2016"
+            ],
+            [
+              "Electra Girl's Hawaii 1 (20-inch) - 2015/2016"
+            ],
+            [
+              "Heller Shagamaw Frame - 2016"
+            ],
+            [
+              "Electra Townie Original 7D EQ - Women's - 2016"
+            ],
+            [
+              "Ritchey Timberwolf Frameset - 2016"
+            ],
+            [
+              "Electra Girl's Hawaii 1 (16-inch) - 2015/2016"
+            ],
+            [
+              "Trek Slash 8 27.5 - 2016"
+            ],
+            [
+              "Trek Conduit+ - 2016"
+            ],
+            [
+              "Surly Straggler - 2016"
+            ],
+            [
+              "Trek Conduit+ - 2016"
+            ],
+            [
+              "Trek Conduit+ - 2016"
+            ],
+            [
+              "Surly Straggler - 2016"
+            ],
+            [
+              "Electra Girl's Hawaii 1 (16-inch) - 2015/2016"
+            ],
+            [
+              "Pure Cycles Vine 8-Speed - 2016"
+            ],
+            [
+              "Surly Straggler - 2016"
+            ],
+            [
+              "Electra Moto 1 - 2016"
+            ],
+            [
+              "Electra Girl's Hawaii 1 (16-inch) - 2015/2016"
+            ],
+            [
+              "Trek Fuel EX 8 29 - 2016"
+            ],
+            [
+              "Electra Girl's Hawaii 1 (20-inch) - 2015/2016"
+            ],
+            [
+              "Electra Cruiser 1 (24-Inch) - 2016"
+            ],
+            [
+              "Surly Wednesday Frameset - 2016"
+            ],
+            [
+              "Pure Cycles Western 3-Speed - Women's - 2015/2016"
+            ],
+            [
+              "Electra Girl's Hawaii 1 (20-inch) - 2015/2016"
+            ],
+            [
+              "Surly Straggler - 2016"
+            ],
+            [
+              "Electra Girl's Hawaii 1 (16-inch) - 2015/2016"
+            ],
+            [
+              "Electra Girl's Hawaii 1 (16-inch) - 2015/2016"
+            ],
+            [
+              "Electra Cruiser 1 (24-Inch) - 2016"
+            ],
+            [
+              "Trek Slash 8 27.5 - 2016"
+            ],
+            [
+              "Ritchey Timberwolf Frameset - 2016"
+            ],
+            [
+              "Electra Townie Original 21D - 2016"
+            ],
+            [
+              "Electra Cruiser 1 (24-Inch) - 2016"
+            ],
+            [
+              "Heller Shagamaw Frame - 2016"
+            ],
+            [
+              "Pure Cycles William 3-Speed - 2016"
+            ],
+            [
+              "Electra Townie Original 7D EQ - 2016"
+            ],
+            [
+              "Trek Remedy 29 Carbon Frameset - 2016"
+            ],
+            [
+              "Heller Shagamaw Frame - 2016"
+            ],
+            [
+              "Trek Slash 8 27.5 - 2016"
+            ],
+            [
+              "Electra Girl's Hawaii 1 (16-inch) - 2015/2016"
+            ],
+            [
+              "Surly Ice Cream Truck Frameset - 2016"
+            ],
+            [
+              "Electra Townie Original 21D - 2016"
+            ],
+            [
+              "Surly Ice Cream Truck Frameset - 2016"
+            ],
+            [
+              "Electra Cruiser 1 (24-Inch) - 2016"
+            ],
+            [
+              "Trek Remedy 29 Carbon Frameset - 2016"
+            ],
+            [
+              "Electra Girl's Hawaii 1 (16-inch) - 2015/2016"
+            ],
+            [
+              "Electra Townie Original 7D EQ - 2016"
+            ],
+            [
+              "Pure Cycles Vine 8-Speed - 2016"
+            ],
+            [
+              "Pure Cycles William 3-Speed - 2016"
+            ],
+            [
+              "Trek Fuel EX 8 29 - 2016"
+            ],
+            [
+              "Trek Slash 8 27.5 - 2016"
+            ],
+            [
+              "Surly Straggler 650b - 2016"
+            ],
+            [
+              "Trek Conduit+ - 2016"
+            ],
+            [
+              "Trek Remedy 29 Carbon Frameset - 2016"
+            ],
+            [
+              "Electra Townie Original 21D - 2016"
+            ],
+            [
+              "Electra Girl's Hawaii 1 (20-inch) - 2015/2016"
+            ],
+            [
+              "Trek Slash 8 27.5 - 2016"
+            ],
+            [
+              "Trek Remedy 29 Carbon Frameset - 2016"
+            ],
+            [
+              "Surly Straggler - 2016"
+            ]
+          ],
+          "results_columns": [
+            "product_name"
+          ],
+          "steps": [
+            {
+              "step": "selector",
+              "tables": [
+                "products",
+                "order_items",
+                "staffs"
+              ]
+            },
+            {
+              "step": "decomposer",
+              "sql": "SELECT t1.product_name FROM products AS t1 JOIN order_items AS t2 ON t1.product_id = t2.product_id WHERE t2.quantity < 10 AND t2.list_price * (100 - discount) > t1.list_price"
+            },
+            {
+              "step": "refiner",
+              "attempts": [
+                {
+                  "attempt": 1,
+                  "sql": "SELECT t1.product_name FROM products AS t1 JOIN order_items AS t2 ON t1.product_id = t2.product_id WHERE t2.quantity < 10 AND t2.list_price * (100 - discount) > t1.list_price",
+                  "success": true,
+                  "error": null
+                }
+              ],
+              "success": true
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "current_chat_id": "1b393891"
+}
