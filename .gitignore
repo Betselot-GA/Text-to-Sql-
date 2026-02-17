@@ -46,6 +46,7 @@ env/
 
 # Jupyter Notebooks
 .ipynb_checkpoints/
+.claude
 
 # Kaggle credentials (should be in ~/.kaggle/)
 kaggle.json
@@ -57,3 +58,7 @@ frontend/dist/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Chat history
+chat_history.json
+foreign_keys.json

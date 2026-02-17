@@ -1,631 +1,291 @@
-# SQL Query Writer Agent Competition
+# SQL Query Writer Agent — Project Report
 
-Welcome to the SQL Query Writer Agent Competition Organized by MindBridge AI! This competition challenges you to build an intelligent agent that can translate natural language questions into SQL queries for a relational database.
+This document describes the **current functionality** of the project and a **step-by-step guide** to run it successfully.
 
 ---
 
 ## Table of Contents
 
-1. [Competition Overview](#competition-overview)
-2. [Objectives](#objectives)
-3. [LLM Access Options](#llm-access-options)
-4. [Getting Started](#getting-started)
-5. [Understanding Python Environments](#understanding-python-environments)
-6. [Project Structure](#project-structure)
-7. [Submission Requirements](#submission-requirements)
-8. [How Your Code Will Be Evaluated](#how-your-code-will-be-evaluated)
-9. [Database Schema](#database-schema)
-10. [Tips and Resources](#tips-and-resources)
-11. [FAQ](#faq)
+1. [Current Functionality](#current-functionality)
+2. [Project Structure](#project-structure)
+3. [Prerequisites](#prerequisites)
+4. [Step-by-Step: Run the Project Successfully](#step-by-step-run-the-project-successfully)
+5. [Running the React Frontend](#running-the-react-frontend)
+6. [Troubleshooting](#troubleshooting)
 
 ---
 
-## Competition Overview
+## Current Functionality
 
-Your task is to create an **AI-powered agent** that can:
+### Core: Text-to-SQL Agent
 
-1. Accept natural language questions from users (e.g., "What are the top 5 best-selling products?")
-2. Understand the database schema and structure
-3. Generate valid SQL queries that answer the user's question
+- **Natural language → SQL**: Users ask questions in plain English (e.g. “What are the top 5 most expensive products?” or “Which product is the most expensive?”). The agent returns an executable SQL query and (when run through the app) the query results.
+- **Database**: Downloads any Kaggle dataset and loads it into DuckDB. The dataset and DB name are configured in `.env` (`KAGGLE_DATASET`, `DB_NAME`). Handled by `db/dataset.py`.
 
-### Required: Open Source Models via Ollama
+### Multi-Agent Pipeline
 
-For this competition, you **must use open source LLMs** through [Ollama](https://ollama.com/). You have two options for accessing these models:
+The agent uses a **Planner → Selector → Decomposer → Critic → Refiner → Verifier** pipeline:
 
-1. **Carleton University LLM Server** (Recommended) - Access powerful models without local hardware requirements
-2. **Local Ollama Installation** - Run models on your own machine
+1. **Planner**: Extracts structured intent and constraints from the question.
+2. **Selector**: Chooses which database tables are relevant.
+3. **Decomposer**: Generates N candidate SQL queries with chain-of-thought reasoning.
+4. **Critic**: Ranks candidates using execution feedback and picks the best.
+5. **Refiner**: Executes the SQL. If it fails, uses the error to ask the LLM for a fix and retries (up to 3 attempts). The fallback `SELECT NULL WHERE FALSE` is **not** treated as success.
+6. **Verifier**: Semantic check — compares the actual result data against the original question.
 
-See the [LLM Access Options](#llm-access-options) section for detailed setup instructions.
+### LLM (Ollama)
 
----
+- All agent steps use **Ollama** (open-source LLMs). Configuration is via environment variables:
+  - `OLLAMA_HOST`: Server URL (default: `http://localhost:11434`).
+  - `OLLAMA_MODEL`: Model name (default: `llama3.2`).
+- Supports either **local Ollama** or **Carleton University LLM server** (set `OLLAMA_HOST` to the provided URL).
 
-## Objectives
+### Chat History
 
-### Primary Objective
+- **Multiple chat sessions**: Users can create new chats, list previous chats, and switch between them.
+- **Per-chat history**: Each chat stores the questions asked, the generated SQL, result row count, and (in the UI) a preview of results.
+- **Pipeline steps**: Stored with each turn. In the UI, each turn has a **“Show pipeline steps”** link to expand and view Selector tables, Decomposer SQL, and Refiner attempts. During generation, pipeline steps are shown **in real time** (see below).
 
-Build a SQL Query Writer Agent that accurately translates natural language questions into executable SQL queries for the provided bike store database.
+### Real-Time Pipeline Progress (React)
 
-### Evaluation Criteria
+- While a question is being processed, the React app shows **live pipeline progress**: which step the model is on (Selector → Decomposer → Refiner) and the details of each step as they complete.
+- This is implemented with **polling**: the frontend calls `POST /api/ask-start` to start the pipeline, then polls `GET /api/ask-status/:job_id` every 400 ms. The backend updates the job’s `steps` array as each pipeline step finishes, so the UI can display progress without relying on streaming.
+- After the answer is returned, the main view shows only the question, generated SQL, and results. Pipeline steps remain available via **“Show pipeline steps”** in each saved turn.
 
-Your submission will be evaluated on:
+### Interfaces
 
-1. **Accuracy**: Does the generated SQL correctly answer the user's question?
-2. **Robustness**: Can your agent handle various types of questions (aggregations, joins, filters, etc.)?
-3. **Error Handling**: Does your agent gracefully handle invalid or ambiguous questions?
-4. **Code Quality**: Is your code well-organized, documented, and maintainable?
-5. **Innovation**: Creative approaches and novel solutions are encouraged!
+| Interface | Description |
+|-----------|-------------|
+| **CLI** (`main.py`) | Terminal interface: type questions, see SQL and results. Commands: `/new`, `/list`, `/switch N`, `/history`, `/help`. |
+| **React frontend** | Web UI at http://localhost:5173. Uses the FastAPI backend. Shows **real-time pipeline steps** while generating; question, SQL, and results in each turn; optional “Show pipeline steps” per turn; fallback warning when the agent could not produce a valid query. |
+| **FastAPI backend** | Serves `/api/chats`, `/api/ask`, `POST /api/ask-start`, `GET /api/ask-status/:id`, etc. Required for the React frontend. Run with `uvicorn backend.server:app --reload --port 8000`. |
+### Robustness and Validation
 
----
-
-## LLM Access Options
-
-You have two options for accessing open source LLMs via Ollama. Choose the one that works best for you.
-
-### Option 1: Carleton University LLM Server (Recommended)
-
-Carleton's Research Computing Services provides access to a powerful LLM server with multiple open source models. This is the **recommended option** as it doesn't require local GPU resources.
-
-#### How to Request Access
-
-1. Go to [https://carleton.ca/rcs/llm-access/](https://carleton.ca/rcs/llm-access/)
-2. Fill out the access request form with:
-   - Your **Carleton University email** (required)
-   - List of models you need
-3. You will receive API endpoint details and authentication credentials
-
-#### Using the Carleton Server
-
-Once you have access, configure your environment:
-
-```bash
-# Set environment variables (add to .env file)
-OLLAMA_HOST=<provided-server-url>
-# Additional auth variables as provided by RCS
-```
-
-The Carleton server uses Ollama-compatible REST API endpoints, so you can use the standard `ollama` Python package:
-
-```python
-import ollama
-
-# Configure client to use Carleton server
-client = ollama.Client(host='<carleton-server-url>')
-
-# Generate a response
-response = client.chat(
-    model='llama3.3',
-    messages=[{'role': 'user', 'content': 'Write a SQL query to count all customers'}]
-)
-print(response['message']['content'])
-```
-
-### Option 2: Local Ollama Installation
-
-If you prefer to run models locally or want to develop offline, you can install Ollama on your own machine.
-
-#### System Requirements
-
-- **macOS**: Apple Silicon (M1/M2/M3) recommended, Intel supported
-- **Linux**: NVIDIA GPU recommended for larger models
-- **Windows**: WSL2 with NVIDIA GPU support
-
-#### Installation
-
-**macOS/Linux:**
-```bash
-curl -fsSL https://ollama.com/install.sh | sh
-```
-
-**Windows:**
-Download from [https://ollama.com/download](https://ollama.com/download)
-
-#### Pulling Models
-
-After installation, pull the models you want to use:
-
-```bash
-# Pull a model (downloads it locally)
-ollama pull llama3.2
-
-# List available models
-ollama list
-
-# Run a model interactively (to test)
-ollama run llama3.2
-```
-
-> **Note:** You are encouraged to explore different open source models available on [Ollama's model library](https://ollama.com/library). Different models have different strengths - experiment to find what works best for SQL generation tasks!
-
----
-
-## Getting Started
-
-### Prerequisites
-
-Before starting, ensure you have:
-
-1. **Python** installed on your system (we recommend Python 3.11+)
-2. **Git** for version control
-3. A **Kaggle account** (for downloading the dataset via kagglehub)
-4. **LLM Access** - Either:
-   - Access to Carleton's LLM server (request at [carleton.ca/rcs/llm-access](https://carleton.ca/rcs/llm-access/)), OR
-   - Local Ollama installation (see [LLM Access Options](#llm-access-options))
-
-### Setting Up Your Environment
-
-1. **Clone the repository** to your local machine:
-   ```bash
-   git clone https://github.com/araskay/carleton_competition.git
-   cd carleton_competition
-   ```
-
-2. **Create a virtual environment** (see [Understanding Python Environments](#understanding-python-environments) below)
-
-3. **Install dependencies** (inside your venv so all packages stay in the venv):
-   ```bash
-   pip install -r requirements.txt
-   ```
-   On Windows, if the venv is not activated, use: `.\venv\Scripts\pip.exe install -r requirements.txt`
-
-4. **Set up Kaggle credentials** (required for downloading the dataset):
-   - Go to [Kaggle](https://www.kaggle.com/) and sign in
-   - Navigate to your account settings
-   - Create a new API token (this downloads `kaggle.json`)
-   - Place `kaggle.json` in `~/.kaggle/` (Linux/Mac) or `C:\Users\<username>\.kaggle\` (Windows)
-
-5. **Run the template** to verify everything works:
-   ```bash
-   python main.py
-   ```
-
----
-
-## Understanding Python Environments
-
-If you're new to Python development, this section explains virtual environments and package management.
-
-### What is a Virtual Environment?
-
-A virtual environment is an **isolated Python installation** that keeps your project's dependencies separate from other projects. This prevents conflicts between different projects that might need different versions of the same package.
-
-### Why Use Virtual Environments?
-
-- **Reproducibility**: Others can recreate your exact environment
-- **Isolation**: Project dependencies don't conflict with each other
-- **Clean Development**: Easy to start fresh if something goes wrong
-
-### Creating a Virtual Environment
-
-There are several tools for managing Python environments. Here are the most common:
-
-#### Option 1: venv (Built into Python)
-
-```bash
-# Create a virtual environment
-python -m venv myenv
-
-# Activate it (Linux/Mac)
-source myenv/bin/activate
-
-# Activate it (Windows)
-myenv\Scripts\activate
-
-# Install packages
-pip install -r requirements.txt
-
-# Deactivate when done
-deactivate
-```
-
-#### Option 2: conda (Anaconda/Miniconda)
-
-```bash
-# Create environment with specific Python version
-conda create -n myenv python=3.11
-
-# Activate it
-conda activate myenv
-
-# Install packages
-pip install -r requirements.txt
-
-# Deactivate when done
-conda deactivate
-```
-
-#### Option 3: pyenv (Advanced)
-
-```bash
-# Install specific Python version
-pyenv install 3.11.9
-
-# Create virtual environment
-pyenv virtualenv 3.11.9 myenv
-
-# Activate it
-pyenv activate myenv
-
-# Install packages
-pip install -r requirements.txt
-```
-
-### Understanding requirements.txt
-
-The `requirements.txt` file lists all Python packages your project needs. Each line specifies a package and its version:
-
-```
-package_name==1.2.3
-```
-
-The `==` ensures the **exact version** is installed, which is crucial for reproducibility.
-
-#### How to Add Packages
-
-1. **Install the package** in your virtual environment:
-   ```bash
-   pip install package_name
-   ```
-
-2. **Check the installed version**:
-   ```bash
-   pip show package_name
-   ```
-
-3. **Add to requirements.txt** with the exact version:
-   ```
-   package_name==X.Y.Z
-   ```
-
-#### Generating requirements.txt Automatically
-
-You can generate a requirements.txt from your current environment:
-
-```bash
-pip freeze > requirements.txt
-```
-
-**Warning**: This includes ALL packages in your environment. It's often better to manually list only the packages you directly use, as indirect dependencies will be installed automatically.
-
-### Understanding runtime.txt
-
-The `runtime.txt` file specifies the **exact Python version** your project requires. The format is:
-
-```
-python-X.Y.Z
-```
-
-For example:
-```
-python-3.11.9
-```
-
-This ensures evaluators use the same Python version you developed with.
+- **Schema from server**: Schema can be refreshed from the database; tables are validated against the live catalog before being sent to the Decomposer.
+- **Single execution path**: All execution goes through DuckDB, so errors and fixes are consistent.
+- **Clear fallback behaviour**: When the agent cannot produce a valid query, the UI shows a warning and suggests checking Ollama, model, and database.
 
 ---
 
 ## Project Structure
 
-Your submission should follow this structure:
-
 ```
-your_submission/
-├── runtime.txt          # Python version (REQUIRED)
-├── requirements.txt     # Package dependencies (REQUIRED)
-├── agent.py             # Your QueryWriter implementation (REQUIRED)
-├── main.py              # Interactive testing interface (PROVIDED)
+Text-to-Sql/
+├── .env                  # KAGGLE_DATASET, DB_NAME, OLLAMA_HOST, OLLAMA_MODEL
+├── agent.py              # QueryWriter + Planner/Selector/Decomposer/Critic/Refiner/Verifier pipeline
+├── main.py               # CLI entry point
+├── foreign_keys.json     # Cached foreign key relationships (auto-generated)
+├── runtime.txt           # Python version (e.g. python-3.11.9)
+├── requirements.txt      # Python dependencies (install in venv)
 ├── db/
 │   ├── __init__.py
-│   └── bike_store.py    # Database loader (PROVIDED)
-└── src/                 # Additional source code (optional)
-    ├── __init__.py
-    └── ...
+│   └── dataset.py        # Generic Kaggle dataset loader → DuckDB
+├── backend/
+│   ├── __init__.py
+│   ├── server.py         # FastAPI: chats, ask, ask-start, ask-status (polling)
+│   └── chat_store.py     # Chat persistence (JSON)
+└── frontend/             # React (Vite) web UI
+    ├── package.json
+    ├── vite.config.js    # Proxies /api to backend
+    ├── index.html
+    └── src/
+        ├── main.jsx
+        ├── App.jsx       # Chat list, turns, live pipeline progress, ask form
+        └── App.css
 ```
-
-### Required Files
-
-| File | Description |
-|------|-------------|
-| `runtime.txt` | Contains the Python version (e.g., `python-3.11.9`) |
-| `requirements.txt` | Lists all package dependencies with exact versions |
-| `agent.py` | Contains your `QueryWriter` class implementation |
-
-### Provided Files
-
-| File | Description |
-|------|-------------|
-| `main.py` | Interactive interface for testing your agent |
-| `db/bike_store.py` | Downloads and loads the bike store dataset into DuckDB |
-
-### React frontend (optional)
-
-A React (Vite) web UI is in the `frontend/` folder. To run it:
-
-1. **Start the API** (from project root, with venv activated):
-   ```bash
-   uvicorn backend.server:app --reload --port 8000
-   ```
-2. **Start the React app** (in another terminal):
-   ```bash
-   cd frontend && npm install && npm run dev
-   ```
-3. Open **http://localhost:5173** in your browser.
-
-See `frontend/README.md` for more details.
 
 ---
 
-## Submission Requirements
+## Prerequisites
 
-### 1. Python Version (runtime.txt)
-
-Create a `runtime.txt` file with your exact Python version:
-
-```
-python-3.11.9
-```
-
-To find your Python version:
-```bash
-python --version
-# Output: Python 3.11.9
-```
-
-### 2. Dependencies (requirements.txt)
-
-List ALL packages your project needs with **pinned versions**:
-
-```
-# Core dependencies (already included)
-duckdb==1.1.3
-sqlalchemy==2.0.36
-kagglehub==0.3.4
-ollama==0.4.7
-
-# Add your additional dependencies below, for example:
-# langchain==0.3.7
-# langchain-ollama==0.2.3
-```
-
-**Important**:
-- Use `==` for exact versions, not `>=` or `~=`
-- Include ALL packages you import (directly or indirectly)
-- Test your requirements.txt in a fresh environment before submitting
-
-### 3. Agent Implementation (agent.py)
-
-Your `agent.py` must contain a `QueryWriter` class with the following interface:
-
-```python
-class QueryWriter:
-    def __init__(self, db_path: str = 'bike_store.db'):
-        """
-        Initialize the QueryWriter.
-
-        Args:
-            db_path (str): Path to the DuckDB database file.
-        """
-        # Your initialization code here
-        pass
-
-    def generate_query(self, prompt: str) -> str:
-        """
-        Generate a SQL query from a natural language prompt.
-
-        Args:
-            prompt (str): The natural language question.
-                         Example: "What are the top 5 most expensive products?"
-
-        Returns:
-            str: A valid SQL query that answers the question.
-                 Example: "SELECT product_name, list_price FROM products ORDER BY list_price DESC LIMIT 5"
-        """
-        # Your implementation here
-        pass
-```
-
-**Important Requirements:**
-- The `generate_query` method must accept a natural language prompt and return a SQL query string
-- Return ONLY the SQL query, no explanations or markdown formatting
-- The returned query must be valid SQL that can be executed against the bike store database
-
-### 4. Code Organization
-
-- Keep your code clean and well-documented
-- Use meaningful variable and function names
-- Handle errors gracefully
-- You may add additional helper methods or classes to `agent.py`
-- You may create additional files in a `src/` directory if needed
+- **Python 3.11+** (see `runtime.txt`).
+- **Node.js 18+** and **npm** (only if you run the React frontend).
+- **Ollama**: Either [installed locally](https://ollama.com/download) and running, or access to Carleton’s LLM server (set `OLLAMA_HOST`).
+- **Kaggle account** and **Kaggle API** set up (for first-time database download). Place `kaggle.json` in `~/.kaggle/` (Linux/macOS) or `C:\Users\<username>\.kaggle\` (Windows).
 
 ---
 
-## How Your Code Will Be Evaluated
+## Step-by-Step: Run the Project Successfully
 
-### Environment Setup
+Follow these steps in order. Use the project root as the working directory unless stated otherwise.
 
-Your submission will be set up using the following process:
+### Step 1: Open the project folder
 
 ```bash
-# Read Python version from runtime.txt
-PYTHON_VERSION=$(cut -d- -f2 runtime.txt)
+cd /path/to/Text-to-Sql
+```
 
-# Create virtual environment (using pyenv)
-pyenv install -s $PYTHON_VERSION
-pyenv virtualenv $PYTHON_VERSION submission-env
-pyenv activate submission-env
+(Use your actual path to the project.)
 
-# Install dependencies
+---
+
+### Step 2: Create and use a virtual environment (recommended)
+
+**Windows (PowerShell):**
+
+```powershell
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+```
+
+If you see “script execution disabled”, run once (as your user):
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+Then run the activation again.
+
+**Windows (Command Prompt):**
+
+```cmd
+python -m venv venv
+venv\Scripts\activate.bat
+```
+
+**macOS/Linux:**
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+You should see `(venv)` in the prompt. All following `pip` and `python` commands assume this environment is active. If you prefer not to activate, use `.\venv\Scripts\pip.exe` and `.\venv\Scripts\python.exe` (Windows) instead.
+
+---
+
+### Step 3: Install Python dependencies inside the venv
+
+```bash
 pip install -r requirements.txt
 ```
 
-### Evaluation Process
+On Windows without activation:
 
-Your `QueryWriter` class will be evaluated against a **hidden evaluation dataset** containing natural language prompts and expected SQL queries. The evaluation will:
-
-1. Import your `QueryWriter` class from `agent.py`
-2. Initialize it with the bike store database
-3. Call `generate_query()` with various natural language prompts
-4. Compare the results of executing your generated queries against expected results
-
-```python
-# Example of how your agent will be evaluated
-from agent import QueryWriter
-
-agent = QueryWriter(db_path='bike_store.db')
-
-# For each prompt in the evaluation dataset:
-generated_sql = agent.generate_query("What are the top 5 most expensive products?")
-# Execute and compare results...
+```powershell
+.\venv\Scripts\pip.exe install -r requirements.txt
 ```
 
-**Note:** The evaluation dataset is not available to students. Design your agent to handle a variety of question types.
-
-### What This Means for You
-
-1. **Test in a clean environment**: Before submitting, create a fresh virtual environment and verify your code runs with only the packages in `requirements.txt`
-
-2. **Pin all versions**: Unpinned dependencies might install different versions, breaking your code
-
-3. **Don't rely on global packages**: If it's not in `requirements.txt`, assume it won't be available
-
-4. **Test your QueryWriter class**: Make sure your `generate_query` method works correctly with various types of questions
-
-5. **Use `main.py` for testing**: Run `python main.py` to interactively test your agent during development
+Wait until all packages install without errors.
 
 ---
 
-## Database Schema
+### Step 4: Set up Kaggle (first-time only)
 
-The bike store database is sourced from the [Bike Store Sample Database](https://www.kaggle.com/datasets/dillonmyrick/bike-store-sample-database) on Kaggle. It contains the following tables:
+1. Log in at [Kaggle](https://www.kaggle.com/).
+2. Account → “Create New API Token”. This downloads `kaggle.json`.
+3. Put `kaggle.json` in:
+   - **Windows:** `C:\Users\<YourUsername>\.kaggle\`
+   - **macOS/Linux:** `~/.kaggle/`
 
-### Tables Overview
+The first run of `main.py` will download the Kaggle dataset using this file.
 
-| Table | Description |
-|-------|-------------|
-| `brands` | Bicycle brands |
-| `categories` | Product categories |
-| `customers` | Customer information |
-| `order_items` | Individual items in orders |
-| `orders` | Customer orders |
-| `products` | Products available for sale |
-| `staffs` | Store staff members |
-| `stocks` | Inventory levels by store |
-| `stores` | Store locations |
+---
 
-### Exploring the Schema
+### Step 5: Create the database (first-time only)
 
-Run the database loader to see the full schema:
+From the project root, with the venv activated:
 
 ```bash
-python -c "from db.bike_store import BikeStoreDb, get_schema_info; BikeStoreDb(); print(get_schema_info())"
+python main.py
 ```
 
-Or use the helper function in your code:
+- The first time, this downloads the dataset from Kaggle and creates the `.db` file in the `db/` folder (name based on `DB_NAME` in `.env`).
+- When you see the "Enter your question" prompt, you can type a test question or type `quit` to exit.
 
-```python
-from db.bike_store import get_schema_info
+After the database exists, you do not need to run `main.py` again just to create the DB; you can start the API or React flow directly.
 
-schema = get_schema_info()
-for table, columns in schema.items():
-    print(f"\nTable: {table}")
-    for col in columns:
-        print(f"  - {col['name']}: {col['type']}")
+---
+
+### Step 6: Start Ollama (local LLM)
+
+If you use **local Ollama**:
+
+1. Install from [ollama.com](https://ollama.com/download) if needed.
+2. Start Ollama (e.g. run `ollama serve` or start the Ollama app so the server is running).
+3. Pull a model, e.g.:
+
+   ```bash
+   ollama pull llama3.2
+   ```
+
+If you use **Carleton’s LLM server**, set the environment variable (and any auth) as provided:
+
+```bash
+set OLLAMA_HOST=<provided-server-url>
 ```
 
----
-
-## Tips and Resources
-
-### Tips for Success
-
-1. **Start Simple**: Get a basic prompt working before adding complexity
-2. **Test Incrementally**: Test your agent with various types of questions
-3. **Provide Schema Context**: LLMs need to know the database structure to write correct SQL
-4. **Handle Errors**: Not every question can be answered - handle these gracefully
-5. **Validate SQL**: Consider validating generated SQL before execution
-
-### Example Questions to Test
-
-- "How many customers are there?"
-- "What are the top 5 most expensive products?"
-- "Show me all orders from 2018"
-- "Which store has the most inventory?"
-- "What is the total revenue by brand?"
-- "List all staff members and their stores"
-
-### Useful Resources
-
-**Example Implementations:**
-- [Query Writer Agent Example](https://github.com/araskay/query_writer_agent) - A reference implementation of a SQL query writer agent
-- [Agentic Design Patterns](https://github.com/araskay/agentic_patterns) - Overview of common agentic design patterns
-
-**Documentation:**
-- [DuckDB Documentation](https://duckdb.org/docs/)
-- [SQLAlchemy Documentation](https://docs.sqlalchemy.org/)
-- [Ollama Documentation](https://github.com/ollama/ollama/blob/main/docs/api.md)
-- [Ollama Python Library](https://github.com/ollama/ollama-python)
-- [LangChain SQL Agent](https://python.langchain.com/docs/tutorials/sql_qa/)
-- [LangChain Ollama Integration](https://python.langchain.com/docs/integrations/llms/ollama/)
-- [Carleton LLM Access](https://carleton.ca/rcs/llm-access/)
+(Use `export OLLAMA_HOST=...` on macOS/Linux.)
 
 ---
 
-## FAQ
+### Step 7a: Run the CLI (terminal interface)
 
-### Q: Which LLM models can I use?
+With the venv activated, database created, and Ollama running:
 
-**A**: You must use **open source models via Ollama**. You can access these through the Carleton University LLM server or by running Ollama locally. See [LLM Access Options](#llm-access-options) for details.
+```bash
+python main.py
+```
 
-### Q: Can I use OpenAI, Anthropic, or other commercial APIs?
-
-**A**: No. This competition requires the use of open source models through Ollama. This ensures a level playing field and gives you experience with self-hosted LLM solutions.
-
-### Q: What if I don't have a powerful GPU?
-
-**A**: Use the Carleton University LLM server! It provides access to large models (up to 235B parameters) without requiring local hardware. Request access at [carleton.ca/rcs/llm-access](https://carleton.ca/rcs/llm-access/).
-
-### Q: How do I configure my code for evaluation?
-
-**A**: Use environment variables for the Ollama host and model name. This allows evaluators to easily point your code at their infrastructure. See the "Making Your Code Flexible" section under [LLM Access Options](#llm-access-options).
-
-### Q: Can I add additional files?
-
-**A**: Yes! You can organize your code however you like. Just ensure `agent.py` contains your `QueryWriter` class and all imports work correctly.
-
-### Q: What if the dataset download fails?
-
-**A**: Ensure you have valid Kaggle credentials set up. See the [Getting Started](#getting-started) section.
-
-### Q: Can I use a different database?
-
-**A**: No. All submissions must use the provided bike store database in DuckDB to ensure fair evaluation.
-
-### Q: How do I know what Python version I have?
-
-**A**: Run `python --version` in your terminal.
-
-### Q: My code works but fails during evaluation. Why?
-
-**A**: Common issues:
-- Missing packages in `requirements.txt`
-- Unpinned package versions
-- Relying on packages installed globally but not listed
-- Hardcoded file paths that only work on your machine
+- Type natural language questions and press Enter to see generated SQL and results.
+- Use `/new`, `/list`, `/switch N`, `/history`, `/help` as needed. Type `quit` or `exit` to stop.
 
 ---
 
-## Need Help?
+### Step 7b: Run the React frontend (web UI)
 
-If you have questions about the competition:
+You need **two** processes: the API backend and the React dev server.
 
-1. Check this guide and the FAQ first
-2. Review the provided template code
-3. Post your question in the Discord channel
-4. Contact **Dr. Aras Kayvan** at [aras.kayvan@mindbridge.ai](mailto:aras.kayvan@mindbridge.ai)
+**Terminal 1 — Backend (from project root, venv activated):**
 
-Good luck and happy coding!
+```bash
+uvicorn backend.server:app --reload --port 8000
+```
+
+Leave this running. You should see something like “Uvicorn running on http://127.0.0.1:8000”.
+
+**Terminal 2 — React (from project root):**
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Then open **http://localhost:5173** in your browser. The app will proxy `/api` to the backend. You can ask questions, create/switch chats, see **real-time pipeline steps** while the answer is generating, and view results (or the fallback warning if the agent could not produce a valid query). In each saved turn, use **“Show pipeline steps”** to view the pipeline details.
 
 ---
 
-*Organized by MindBridge AI*
+## Running the React Frontend
 
-This competition is for educational purposes only and is non-commercial in nature.
+Summary of the two commands:
+
+| Step | Command | Where |
+|------|---------|--------|
+| 1 | `uvicorn backend.server:app --reload --port 8000` | Project root, venv activated |
+| 2 | `cd frontend && npm install && npm run dev` | Project root then `frontend/` |
+
+Then open **http://localhost:5173**. If you see “Failed to load chats” or “Cannot reach the API”, ensure the backend is running on port 8000.
+
+---
+
+## Troubleshooting
+
+| Issue | What to do |
+|-------|------------|
+| **“Failed to load chats” or “Cannot reach the API”** | Start the backend: `uvicorn backend.server:app --reload --port 8000` from the project root (venv active). |
+| **Generated SQL is `SELECT NULL WHERE FALSE`** | The agent could not produce a valid query. Check: (1) Ollama is running and a model is pulled (e.g. `ollama pull llama3.2`). (2) The database exists in `db/` (run `python main.py` once). (3) In the UI, open the turn, click **"Show pipeline steps"**, and read the red warning for more context. |
+| **`python` not recognized** | Use the venv's executable: `.\venv\Scripts\python.exe main.py` (Windows). |
+| **Venv activation does nothing (PowerShell)** | Run `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`, then run `.\venv\Scripts\Activate.ps1` again. |
+| **Kaggle download fails** | Ensure `kaggle.json` is in the correct folder (`.kaggle` under your user directory) and that you are logged in to Kaggle. |
+| **Packages install to the wrong Python** | Always activate the venv first, or call `.\venv\Scripts\pip.exe install -r requirements.txt` explicitly. |
+
+---
+
+## Quick Reference: Run Order
+
+1. **One-time:** Create venv → `pip install -r requirements.txt` → set up Kaggle → `python main.py` (to create DB) → pull Ollama model.
+2. **Every time (CLI):** Activate venv → ensure Ollama is running → `python main.py`.
+3. **Every time (React):** Activate venv → start `uvicorn backend.server:app --reload --port 8000` → in another terminal run `cd frontend && npm run dev` → open http://localhost:5173.
+
+This report reflects the project’s current functionality and run process as implemented.

@@ -15,21 +15,11 @@ LLM Configuration:
 
 import os
 import duckdb
-from db.bike_store import BikeStoreDb
+from db.dataset import resolve_db_path
 from agent import QueryWriter
 
 
-def initialize_database(db_path: str = 'bike_store.db'):
-    """
-    Initialize the bike store database.
-    Downloads data from Kaggle and creates DuckDB tables.
-    """
-    print("Initializing database...")
-    db = BikeStoreDb(db_path=db_path)
-    return db
-
-
-def execute_query(sql: str, db_path: str = 'bike_store.db'):
+def execute_query(sql: str, db_path: str | None = None):
     """
     Execute a SQL query against the DuckDB database.
 
@@ -40,7 +30,8 @@ def execute_query(sql: str, db_path: str = 'bike_store.db'):
     Returns:
         list: Query results as a list of tuples.
     """
-    con = duckdb.connect(database=db_path, read_only=True)
+    resolved = resolve_db_path(db_path)
+    con = duckdb.connect(database=resolved, read_only=True)
     try:
         result = con.execute(sql).fetchall()
         return result
@@ -52,12 +43,9 @@ def main():
     """
     Main function to run the SQL Query Writer Agent interactively.
     """
-    db_path = 'bike_store.db'
+    db_path = resolve_db_path()
 
-    # Initialize the database
-    initialize_database(db_path)
-
-    # Initialize the QueryWriter agent
+    # Initialize the QueryWriter agent (also initializes the DB)
     print("Initializing QueryWriter agent...")
     agent = QueryWriter(db_path=db_path)
 
@@ -67,6 +55,7 @@ def main():
     print("=" * 60)
     print(f"\nOllama Host: {os.getenv('OLLAMA_HOST', 'http://localhost:11434')}")
     print(f"Model: {os.getenv('OLLAMA_MODEL', 'llama3.2')}")
+    print(f"Database Path: {db_path}")
     print("\nDatabase loaded with the following tables:")
     for table_name in agent.schema.keys():
         print(f"  - {table_name}")
