@@ -3,13 +3,11 @@ FastAPI backend for the React frontend.
 
 Run from project root: uvicorn backend.server:app --reload --port 8000
 """
-import asyncio
-import json
 import sys
 import threading
+import time
 import uuid
 from pathlib import Path
-from queue import Empty, Queue
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
@@ -18,10 +16,10 @@ if str(ROOT) not in sys.path:
 import duckdb
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from agent import QueryWriter, FALLBACK_SQL
+from db.dataset import resolve_db_path
 from backend.chat_store import (
     add_turn as store_add_turn,
     create_chat as store_create_chat,
@@ -31,12 +29,24 @@ from backend.chat_store import (
     ensure_current as store_ensure_current,
 )
 
-DB_PATH = str(ROOT / "bike_store.db")
+DB_PATH = resolve_db_path()
 agent: QueryWriter | None = None
 
-# Polling-based progress: job_id -> { status, steps, result?, error? }
+# Polling-based progress: job_id -> { status, steps, result?, error?, _finished_at? }
 _jobs: dict[str, dict] = {}
 _jobs_lock = threading.Lock()
+_JOBS_TTL_SECONDS = 300  # evict completed jobs after 5 minutes
+
+
+def _evict_old_jobs() -> None:
+    """Remove completed jobs older than _JOBS_TTL_SECONDS. Must be called with _jobs_lock held."""
+    now = time.monotonic()
+    expired = [
+        jid for jid, job in _jobs.items()
+        if job.get("_finished_at") and now - job["_finished_at"] > _JOBS_TTL_SECONDS
+    ]
+    for jid in expired:
+        del _jobs[jid]
 
 
 def get_agent():
@@ -55,6 +65,17 @@ def execute_query(sql: str):
         return cols, rows
     finally:
         con.close()
+
+
+def _conversation_turns_for_chat(chat_id: str, max_turns: int = 6) -> list[dict]:
+    """Return recent turns for context-aware text-to-SQL generation."""
+    chat = store_get_chat(chat_id)
+    if not chat:
+        return []
+    turns = chat.get("turns") or []
+    if not isinstance(turns, list):
+        return []
+    return turns[-max_turns:]
 
 
 app = FastAPI(title="SQL Query Writer API")
@@ -112,7 +133,10 @@ def api_ask(body: AskRequest):
     chat_id = body.chat_id or store_ensure_current()
     try:
         ag = get_agent()
-        sql, steps = ag.generate_query_with_steps(prompt)
+        sql, steps = ag.generate_query_with_steps(
+            prompt,
+            conversation_turns=_conversation_turns_for_chat(chat_id),
+        )
         columns, rows = execute_query(sql)
         preview = [list(r) for r in rows[:100]]
         store_add_turn(
@@ -146,7 +170,11 @@ def _run_pipeline_for_job(job_id: str, prompt: str, chat_id: str) -> None:
 
     try:
         ag = get_agent()
-        sql, steps = ag.generate_query_with_steps(prompt, on_step=on_step)
+        sql, steps = ag.generate_query_with_steps(
+            prompt,
+            on_step=on_step,
+            conversation_turns=_conversation_turns_for_chat(chat_id),
+        )
         columns, rows = execute_query(sql)
         preview = [list(r) for r in rows[:100]]
         store_add_turn(
@@ -157,6 +185,7 @@ def _run_pipeline_for_job(job_id: str, prompt: str, chat_id: str) -> None:
         is_fallback = sql.strip().upper() == FALLBACK_SQL.upper()
         with _jobs_lock:
             _jobs[job_id]["status"] = "done"
+            _jobs[job_id]["_finished_at"] = time.monotonic()
             _jobs[job_id]["result"] = {
                 "sql": sql,
                 "columns": columns,
@@ -169,6 +198,7 @@ def _run_pipeline_for_job(job_id: str, prompt: str, chat_id: str) -> None:
     except Exception as e:
         with _jobs_lock:
             _jobs[job_id]["status"] = "done"
+            _jobs[job_id]["_finished_at"] = time.monotonic()
             _jobs[job_id]["error"] = str(e)
 
 
@@ -180,6 +210,8 @@ def api_ask_start(body: AskRequest):
         raise HTTPException(status_code=400, detail="Prompt is required")
     chat_id = body.chat_id or store_ensure_current()
     job_id = uuid.uuid4().hex[:12]
+    with _jobs_lock:
+        _evict_old_jobs()
     thread = threading.Thread(target=_run_pipeline_for_job, args=(job_id, prompt, chat_id))
     thread.start()
     return {"job_id": job_id}
@@ -193,78 +225,6 @@ def api_ask_status(job_id: str):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
-
-
-@app.post("/api/ask-stream")
-async def api_ask_stream(body: AskRequest):
-    """Stream pipeline steps as SSE, then send final result. For live progress UI."""
-    prompt = (body.prompt or "").strip()
-    if not prompt:
-        raise HTTPException(status_code=400, detail="Prompt is required")
-    chat_id = body.chat_id or store_ensure_current()
-    q: Queue = Queue()
-
-    def run_pipeline():
-        try:
-            ag = get_agent()
-
-            def on_step(step: dict):
-                q.put(step)
-
-            sql, steps = ag.generate_query_with_steps(prompt, on_step=on_step)
-            columns, rows = execute_query(sql)
-            preview = [list(r) for r in rows[:100]]
-            store_add_turn(
-                chat_id, prompt, sql, len(rows), preview,
-                results_columns=columns,
-                steps=steps,
-            )
-            is_fallback = sql.strip().upper() == FALLBACK_SQL.upper()
-            q.put({
-                "done": True,
-                "sql": sql,
-                "columns": columns,
-                "rows": [list(r) for r in rows],
-                "results_count": len(rows),
-                "chat_id": chat_id,
-                "steps": steps,
-                "is_fallback": is_fallback,
-            })
-        except Exception as e:
-            q.put({"done": True, "error": str(e)})
-
-    def sse_format(obj: dict) -> bytes:
-        return f"data: {json.dumps(obj)}\n\n".encode("utf-8")
-
-    async def stream():
-        loop = asyncio.get_event_loop()
-        thread = threading.Thread(target=run_pipeline)
-        thread.start()
-        while True:
-            try:
-                item = await asyncio.wait_for(
-                    loop.run_in_executor(None, q.get),
-                    timeout=300.0,
-                )
-            except asyncio.TimeoutError:
-                yield sse_format({"done": True, "error": "Timeout"})
-                break
-            yield sse_format(item)
-            # Give the server a moment to send this chunk before we block on the next step
-            await asyncio.sleep(0.05)
-            if item.get("done"):
-                break
-        thread.join(timeout=1.0)
-
-    return StreamingResponse(
-        stream(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
 
 
 @app.get("/api/health")
