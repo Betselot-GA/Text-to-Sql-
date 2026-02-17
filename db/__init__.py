@@ -1,4 +1,3 @@
-# Database utilities for the SQL Query Writer Agent competition
-from .bike_store import BikeStoreDb, get_schema_info
+from .dataset import KaggleDataset, get_schema_info, resolve_db_path
 
-__all__ = ['BikeStoreDb', 'get_schema_info']
+__all__ = ['KaggleDataset', 'get_schema_info', 'resolve_db_path']
