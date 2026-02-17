@@ -131,15 +131,45 @@ function PipelineStepsDisplay({ steps, live = false }) {
         if (s.step === 'selector') {
           return (
             <div key={i} className="step step-selector">
-              <span className="step-label">1. Selector</span>
+              <span className="step-label">Selector</span>
               <span className="step-detail">Tables: {s.tables?.length ? s.tables.join(', ') : '…'} {s.message || ''}</span>
+            </div>
+          )
+        }
+        if (s.step === 'planner') {
+          return (
+            <div key={i} className="step step-planner">
+              <span className="step-label">Planner</span>
+              <span className="step-detail">
+                Intent: {s.plan?.intent || '—'}
+              </span>
+            </div>
+          )
+        }
+        if (s.step === 'candidate') {
+          return (
+            <div key={i} className="step step-candidate">
+              <span className="step-label">Candidate {s.candidate_index || '?'}</span>
+              <pre className="step-sql">{s.sql || '—'}</pre>
+            </div>
+          )
+        }
+        if (s.step === 'critic') {
+          return (
+            <div key={i} className="step step-critic">
+              <span className="step-label">Critic</span>
+              <span className="step-detail">
+                Selected #{s.selected_index || 1} (score: {Number.isFinite(s.score) ? s.score.toFixed(2) : '—'})
+                {s.reason ? ` — ${s.reason}` : ''}
+              </span>
+              <pre className="step-sql">{s.sql || '—'}</pre>
             </div>
           )
         }
         if (s.step === 'decomposer') {
           return (
             <div key={i} className="step step-decomposer">
-              <span className="step-label">2. Decomposer</span>
+              <span className="step-label">Decomposer</span>
               <pre className="step-sql">{s.sql || s.message || '—'}</pre>
             </div>
           )
@@ -147,7 +177,7 @@ function PipelineStepsDisplay({ steps, live = false }) {
         if (s.step === 'refiner_attempt') {
           return (
             <div key={i} className="step step-refiner">
-              <span className="step-label">3. Refiner</span>
+              <span className="step-label">Refiner</span>
               <div className="refiner-attempt">
                 <span>Attempt {s.attempt}:</span>
                 <pre className="step-sql">{s.sql}</pre>
@@ -160,7 +190,7 @@ function PipelineStepsDisplay({ steps, live = false }) {
           const hasAttemptsAbove = steps.slice(0, i).some((x) => x.step === 'refiner_attempt')
           return (
             <div key={i} className="step step-refiner">
-              <span className="step-label">3. Refiner</span>
+              <span className="step-label">Refiner</span>
               {!hasAttemptsAbove && s.attempts?.map((a, j) => (
                 <div key={j} className="refiner-attempt">
                   <span>Attempt {a.attempt}:</span>
@@ -172,19 +202,44 @@ function PipelineStepsDisplay({ steps, live = false }) {
             </div>
           )
         }
+        if (s.step === 'verifier') {
+          return (
+            <div key={i} className="step step-verifier">
+              <span className="step-label">Verifier</span>
+              {s.passed ? (
+                <span className="attempt-ok">✓ Semantic check passed{ s.reason ? ` — ${s.reason}` : ''}</span>
+              ) : (
+                <span className="attempt-err">✗ Semantic check failed{ s.reason ? ` — ${s.reason}` : ''}</span>
+              )}
+              {!!s.suggested_sql && <pre className="step-sql">{s.suggested_sql}</pre>}
+            </div>
+          )
+        }
+        if (s.step === 'verifier_repair') {
+          return (
+            <div key={i} className="step step-verifier-repair">
+              <span className="step-label">Verifier Repair</span>
+              {s.success ? <span className="attempt-ok">✓ Repair query executed</span> : <span className="attempt-err">✗ Repair query failed</span>}
+            </div>
+          )
+        }
         return null
       })}
     </div>
   )
 }
 
-function Turn({ turn, defaultOpen }) {
+function Turn({ turn, defaultOpen, collapse }) {
   const [open, setOpen] = useState(defaultOpen)
   const [showSteps, setShowSteps] = useState(false)
   const preview = turn.results_preview || []
   const columns = turn.results_columns?.length ? turn.results_columns : (preview[0] ? preview[0].map((_, i) => `Column ${i + 1}`) : [])
   const isFallback = turn.sql?.trim().toUpperCase() === FALLBACK_SQL.toUpperCase()
   const hasSteps = turn.steps?.length > 0
+
+  useEffect(() => {
+    if (collapse) setOpen(false)
+  }, [collapse])
 
   return (
     <div className="turn">
@@ -351,19 +406,24 @@ export default function App() {
             )}
           </div>
         )}
-        {(submitting || liveSteps.length > 0) && (
-          <div className="live-pipeline">
-            {liveSteps.length > 0 ? (
-              <PipelineStepsDisplay steps={liveSteps} live />
-            ) : (
-              <p className="processing-msg">Processing… (Selector → Decomposer → Refiner)</p>
-            )}
-          </div>
-        )}
         <div className="turns">
           {turns.map((turn, i) => (
-            <Turn key={i} turn={turn} defaultOpen={i === turns.length - 1} />
+            <Turn
+              key={i}
+              turn={turn}
+              defaultOpen={i === turns.length - 1}
+              collapse={submitting}
+            />
           ))}
+          {(submitting || liveSteps.length > 0) && (
+            <div className="live-pipeline">
+              {liveSteps.length > 0 ? (
+                <PipelineStepsDisplay steps={liveSteps} live />
+              ) : (
+                <p className="processing-msg">Processing… (Planner → Selector → Candidates → Critic → Refiner → Verifier)</p>
+              )}
+            </div>
+          )}
         </div>
         <form className="ask-form" onSubmit={handleSubmit}>
           <input

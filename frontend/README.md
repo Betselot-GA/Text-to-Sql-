@@ -6,7 +6,7 @@ This is the React (Vite) frontend for the SQL Query Writer agent. It talks to th
 
 - Node.js 18+ and npm
 - Backend running (see below)
-- Database initialized (`bike_store.db` exists; run `python main.py` once from project root if needed)
+- Database initialized (run `python main.py` once from project root if needed)
 
 ## Run the backend (from project root)
 
