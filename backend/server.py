@@ -23,6 +23,7 @@ from db.dataset import resolve_db_path
 from backend.chat_store import (
     add_turn as store_add_turn,
     create_chat as store_create_chat,
+    delete_chat as store_delete_chat,
     get_chat as store_get_chat,
     list_chats as store_list_chats,
     set_current as store_set_current,
@@ -107,6 +108,14 @@ def api_list_chats():
 def api_create_chat():
     chat = store_create_chat()
     return chat
+
+
+@app.delete("/api/chats/{chat_id}")
+def api_delete_chat(chat_id: str):
+    ok = store_delete_chat(chat_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    return {"deleted": True, "chat_id": chat_id}
 
 
 @app.get("/api/chats/{chat_id}")

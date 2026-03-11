@@ -98,3 +98,21 @@ def ensure_current():
     # No lock needed here — create_chat acquires its own lock
     chat = create_chat()
     return chat["id"]
+
+
+def delete_chat(chat_id: str) -> bool:
+    """Delete a chat by id. Adjust current_chat_id if needed."""
+    if not chat_id:
+        return False
+    with _file_lock:
+        data = _load()
+        chats = data.get("chats", [])
+        before = len(chats)
+        chats = [c for c in chats if c.get("id") != chat_id]
+        if len(chats) == before:
+            return False
+        data["chats"] = chats
+        if data.get("current_chat_id") == chat_id:
+            data["current_chat_id"] = chats[0]["id"] if chats else None
+        _save(data)
+    return True

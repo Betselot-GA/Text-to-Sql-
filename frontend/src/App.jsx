@@ -24,6 +24,15 @@ async function createChat() {
   return r.json()
 }
 
+async function deleteChat(chatId) {
+  const r = await fetch(`${API}/chats/${chatId}`, { method: 'DELETE' })
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}))
+    throw new Error(err.detail || 'Failed to delete chat')
+  }
+  return r.json()
+}
+
 async function setCurrentChat(chatId) {
   const r = await fetch(`${API}/current-chat`, {
     method: 'PUT',
@@ -119,7 +128,7 @@ function ResultsTable({ columns, rows }) {
 const FALLBACK_SQL = 'SELECT NULL WHERE FALSE'
 
 /** Renders pipeline steps (same shape for live and for saved turns). Handles selector, decomposer, refiner_attempt, refiner. */
-function PipelineStepsDisplay({ steps, live = false }) {
+function PipelineStepsDisplay({ steps, live = false, currentStage = null }) {
   if (!steps?.length) return null
   return (
     <div className={`pipeline-steps ${live ? 'pipeline-steps-live' : ''}`}>
@@ -225,6 +234,18 @@ function PipelineStepsDisplay({ steps, live = false }) {
         }
         return null
       })}
+      {live && currentStage && (
+        <p className="pipeline-stage-footer">
+          <span className="thinking">
+            <span>{currentStage}</span>
+            <span className="thinking-dots">
+              <span />
+              <span />
+              <span />
+            </span>
+          </span>
+        </p>
+      )}
     </div>
   )
 }
@@ -286,6 +307,8 @@ export default function App() {
   const [prompt, setPrompt] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [liveSteps, setLiveSteps] = useState([])
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [pendingDeleteId, setPendingDeleteId] = useState(null)
 
   const loadChats = useCallback(async () => {
     try {
@@ -310,6 +333,7 @@ export default function App() {
       const chat = await createChat()
       setChats((prev) => [...prev, chat])
       setCurrentChatId(chat.id)
+      setSidebarOpen(false)
     } catch (e) {
       setError(e.message)
     }
@@ -320,6 +344,21 @@ export default function App() {
       setError(null)
       await setCurrentChat(id)
       setCurrentChatId(id)
+      setSidebarOpen(false)
+    } catch (e) {
+      setError(e.message)
+    }
+  }
+
+  const handleDeleteChat = async (id) => {
+    try {
+      setError(null)
+      await deleteChat(id)
+      setChats((prev) => prev.filter((c) => c.id !== id))
+      if (currentChatId === id) {
+        const remaining = chats.filter((c) => c.id !== id)
+        setCurrentChatId(remaining[0]?.id ?? null)
+      }
     } catch (e) {
       setError(e.message)
     }
@@ -329,9 +368,35 @@ export default function App() {
     e.preventDefault()
     const q = prompt.trim()
     if (!q || submitting) return
+
+    // Clear the input immediately so it feels responsive
+    setPrompt('')
     setSubmitting(true)
     setError(null)
     setLiveSteps([])
+
+    // Optimistically show the user's question at the end of the current chat
+    setChats((prev) => {
+      if (!currentChatId) return prev
+      return prev.map((c) => {
+        if (c.id !== currentChatId) return c
+        const turns = Array.isArray(c.turns) ? [...c.turns] : []
+        turns.push({
+          prompt: q,
+          sql: '(pending…)',
+          results_preview: [],
+          results_columns: [],
+          results_count: 0,
+          steps: [],
+        })
+        const title =
+          c.title && c.title !== 'New chat'
+            ? c.title
+            : (q.length > 60 ? `${q.slice(0, 57)}…` : q)
+        return { ...c, turns, title }
+      })
+    })
+
     try {
       const result = await askWithProgress(q, currentChatId, (steps) => {
         setLiveSteps(steps)
@@ -341,7 +406,6 @@ export default function App() {
         setSubmitting(false)
         setLiveSteps([])
       } else {
-        setPrompt('')
         await loadChats()
         setSubmitting(false)
         // Keep pipeline steps visible for 2.5s so the user can see what ran
@@ -357,6 +421,28 @@ export default function App() {
   const currentChat = chats.find((c) => c.id === currentChatId)
   const turns = currentChat?.turns ?? []
 
+  const stageNameForStep = (step) => {
+    switch (step) {
+      case 'planner': return 'Planner'
+      case 'selector': return 'Selector'
+      case 'candidate': return 'Candidate'
+      case 'critic': return 'Critic'
+      case 'decomposer': return 'Decomposer'
+      case 'refiner_attempt':
+      case 'refiner': return 'Refiner'
+      case 'verifier': return 'Verifier'
+      case 'verifier_repair': return 'Verifier Repair'
+      default: return 'Thinking'
+    }
+  }
+
+  const currentStageLabel = (() => {
+    if (!submitting && liveSteps.length === 0) return null
+    if (liveSteps.length === 0) return 'Planner'
+    const last = liveSteps[liveSteps.length - 1]
+    return stageNameForStep(last.step)
+  })()
+
   if (loading) {
     return (
       <div className="layout">
@@ -366,13 +452,25 @@ export default function App() {
     )
   }
 
+  const headerTitle = currentChat && currentChat.title && currentChat.title !== 'New chat'
+    ? currentChat.title
+    : ''
+
   return (
     <div className="layout">
-      <aside className="sidebar">
+      <aside className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`}>
         <h1 className="logo">SQL Query Writer</h1>
         <p className="tagline">Ask in plain English → get SQL and results</p>
+        <button
+          type="button"
+          className="sidebar-close"
+          onClick={() => setSidebarOpen(false)}
+          aria-label="Close chats sidebar"
+        >
+          ✕
+        </button>
         <button type="button" className="btn btn-new" onClick={handleNewChat}>
-          + New chat
+          +
         </button>
         <div className="chat-list">
           <h2>Chats</h2>
@@ -380,21 +478,66 @@ export default function App() {
             <p className="muted">No chats yet. Ask a question to start.</p>
           ) : (
             chats.map((c) => (
-              <button
-                type="button"
-                key={c.id}
-                className={`chat-item ${c.id === currentChatId ? 'active' : ''}`}
-                onClick={() => handleSwitchChat(c.id)}
-              >
-                {c.id === currentChatId && '▶ '}{c.title} ({c.turns?.length ?? 0})
-              </button>
+              <div key={c.id} className={`chat-item-row ${c.id === currentChatId ? 'active' : ''}`}>
+                <button
+                  type="button"
+                  className="chat-item"
+                  onClick={() => handleSwitchChat(c.id)}
+                >
+                  {c.id === currentChatId && '▶ '}{c.title} ({c.turns?.length ?? 0})
+                </button>
+                <button
+                  type="button"
+                  className="chat-delete"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setPendingDeleteId(c.id)
+                  }}
+                  aria-label="Delete chat"
+                >
+                  ✕
+                </button>
+                {pendingDeleteId === c.id && (
+                  <div className="chat-delete-confirm">
+                    <span>Delete?</span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleDeleteChat(c.id)
+                        setPendingDeleteId(null)
+                      }}
+                    >
+                      Yes
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setPendingDeleteId(null)
+                      }}
+                    >
+                      No
+                    </button>
+                  </div>
+                )}
+              </div>
             ))
           )}
         </div>
       </aside>
       <main className="main">
         <header className="main-header">
-          <h2>{currentChat?.title || 'New chat'}</h2>
+          <button
+            type="button"
+            className="sidebar-toggle"
+            onClick={() => setSidebarOpen((o) => !o)}
+            aria-label="Toggle chats sidebar"
+          >
+            ☰
+          </button>
+          {/* Only show the header title when the sidebar is closed, so it doesn't clash visually */}
+          {headerTitle && !sidebarOpen && <h2>{headerTitle}</h2>}
         </header>
         {error && (
           <div className="error">
@@ -415,13 +558,23 @@ export default function App() {
               collapse={submitting}
             />
           ))}
-          {(submitting || liveSteps.length > 0) && (
+          {submitting && liveSteps.length === 0 && currentStageLabel && (
             <div className="live-pipeline">
-              {liveSteps.length > 0 ? (
-                <PipelineStepsDisplay steps={liveSteps} live />
-              ) : (
-                <p className="processing-msg">Processing… (Planner → Selector → Candidates → Critic → Refiner → Verifier)</p>
-              )}
+              <p className="processing-msg">
+                <span className="thinking">
+                  <span>{currentStageLabel}</span>
+                  <span className="thinking-dots">
+                    <span />
+                    <span />
+                    <span />
+                  </span>
+                </span>
+              </p>
+            </div>
+          )}
+          {liveSteps.length > 0 && currentStageLabel && (
+            <div className="live-pipeline">
+              <PipelineStepsDisplay steps={liveSteps} live currentStage={currentStageLabel} />
             </div>
           )}
         </div>
